@@ -1,0 +1,3 @@
+[submodule "erdos-graph"]
+	path = erdos-graph
+	url = git@github.com:/erdos-network/erdos-graph.git
