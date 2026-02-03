@@ -6,48 +6,46 @@ We welcome contributions to help verify more parts of the Erdos Graph engine! Th
 
 Since `erdos-graph` is a standard Rust project and Verus requires a specific toolchain and syntax, we do **not** verify the `erdos-graph` crate by adding it as a `Cargo.toml` dependency.
 
-Instead, we **include the source files directly** into our verification crate.
+Instead, we **include the source files directly** and write specifications in **separate modular files**.
 
-### 1. Include the Source File
+### 1. Register Modules in `verified/src/lib.rs`
 
-In `verified/src/lib.rs`, import the module you want to verify using the `#[path]` attribute to point to the submodule file:
+In `verified/src/lib.rs`, you need to do two things:
+1. Import the original source code module using `#[path]`.
+2. Register your new specification module.
 
 ```rust
 // verified/src/lib.rs
 
-// Include the source file directly from the submodule
+use vstd::prelude::*;
+
+// 1. Include the source file directly from the submodule
 #[path = "../../erdos-graph/src/utilities/thread_safe_queue.rs"]
-mod thread_safe_queue;
+pub mod thread_safe_queue;
+
+// 2. Register the module where you write specs for it
+pub mod thread_safe_queue_specs;
 ```
 
-### 2. Handle External Types
+### 2. Create the Spec File
 
-Since the source code in `erdos-graph` doesn't know about Verus (it doesn't use the `verus!` macro), Verus treats it as "external" code. We cannot write specs directly inside those files.
+Create a new file in `verified/src/` (e.g., `verified/src/thread_safe_queue_specs.rs`). This is where all the Verus code lives.
 
-We use **External Type Specifications** to tell Verus about the types and functions in that external code.
-
-#### Example: Verifying a Struct
-
-If `thread_safe_queue.rs` has:
+Structure the file like this:
 
 ```rust
-// In erdos-graph/src/...
-pub struct QueueConfig {
-    pub max_queue_size: usize,
-}
-```
+// verified/src/thread_safe_queue_specs.rs
+use vstd::prelude::*;
 
-We write a spec in `verified/src/lib.rs` (inside the `verus!` block):
-
-```rust
 verus! {
 
-// 1. Tell Verus about the struct layout
+// Refer to types in the source module using `crate::module_name::Type`
+
+// 1. External Type Specification
 #[verifier::external_type_specification]
 pub struct ExQueueConfig(crate::thread_safe_queue::QueueConfig);
 
-// 2. Define behavior for functions you can't verify (shim)
-// This tells Verus: "Assume default() returns a config with max_queue_size == 10000"
+// 2. External Body Specification (Trusted Shim)
 #[verifier::external_body]
 pub fn default_queue_config() -> (c: crate::thread_safe_queue::QueueConfig)
     ensures c.max_queue_size == 10000
@@ -55,7 +53,7 @@ pub fn default_queue_config() -> (c: crate::thread_safe_queue::QueueConfig)
     crate::thread_safe_queue::QueueConfig::default()
 }
 
-// 3. Write your proof/test using the shim
+// 3. Proofs and Tests
 fn check_queue_config() {
     let config = default_queue_config();
     assert(config.max_queue_size == 10000);
@@ -64,13 +62,11 @@ fn check_queue_config() {
 }
 ```
 
-### 3. Writing Proofs
+### 3. Key Concepts
 
-Once the types are bridged, you can write normal Verus proofs.
-
-- **`proof fn`**: Ghost code used only for verification (no runtime cost).
-- **`spec fn`**: Mathematical functions used in specifications.
-- **`exec` functions**: Executable code (usually the tests/wrappers calling the external code).
+- **External Type Specification**: Tells Verus about the layout of structs defined in the `erdos-graph` source code.
+- **`crate::module_name`**: Since the source is included at the crate root in `lib.rs`, you access it globally via `crate::`.
+- **Modularity**: Keep `lib.rs` clean. It should mostly just be a list of modules. All logic goes into `*_specs.rs` files.
 
 ## 🛡️ Guidelines
 
