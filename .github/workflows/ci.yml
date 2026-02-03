@@ -28,11 +28,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools/verus-bin
-          key: verus-${{ runner.os }}-${{ hashFiles('install-verus.sh') }}
+          key: verus-${{ runner.os }}-${{ hashFiles('tools/install-verus.sh') }}
       
       - name: Install Verus
         if: steps.cache-verus.outputs.cache-hit != 'true'
-        run: ./install-verus.sh
+        run: bash tools/install-verus.sh
       
       - name: Add Verus to PATH
         run: echo "$GITHUB_WORKSPACE/tools/verus-bin" >> $GITHUB_PATH
