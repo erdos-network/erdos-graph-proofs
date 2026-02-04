@@ -1,29 +1,14 @@
 # Erdos Graph Proofs
 
-This repository contains formal verification specifications and proofs for the [Erdos Graph](https://github.com/liam-potter/erdos-graph) project, a high-performance graph scraping and ingestion engine.
+This repository contains formal verification specifications and proofs for [Erdos Graph](https://github.com/erdos-network/erdos-graph/). The goal of this repo is to prove the correctness of critical components within the Erdos Graph engine. Instead of relying solely on unit and integration tests, we use formal verification to ensure that the code behaves correctly for *all* possible inputs and states defined by our specifications.
 
-## 🎯 Goal
+## Rust Verification with Verus
 
-The primary goal of this project is to mathematically prove the correctness of critical components within the Erdos Graph engine. Instead of relying solely on unit tests, which check specific scenarios, we use formal verification to ensure that the code behaves correctly for *all* possible inputs and states defined by our specifications.
-
-We focus on verifying:
-- **Thread Safety**: Proving that concurrent data structures (like queues) satisfy safety properties.
-- **Data Consistency**: Ensuring ingestion logic preserves database invariants.
-- **Configuration Logic**: Verifying that defaults and constraints are respected.
-
-## 🛠️ Powered by Verus
-
-We use [Verus](https://github.com/verus-lang/verus), a tool for verifying the correctness of Rust programs.
-
-Verus adds a "ghost" layer to Rust, allowing us to write:
-- **Specifications**: What the code *should* do (preconditions, postconditions, invariants).
-- **Proofs**: Code that guides the verifier to check that the implementation matches the specification.
-
-Verus analyzes the code statically. If it passes verification, it means there are no violations of the specified properties (e.g., no panics, no integer overflows, no invariant breaks).
+We use [Verus](https://www.microsoft.com/en-us/research/project/practical-system-verification/) to verify the correctness of our codebase. Verus adds a "ghost" layer to Rust, allowing us to write specifications on what the code *should* do with preconditions, postconditions and invariants. 
 
 ## 🚀 Setup & Usage
 
-This project uses a standalone Verus installation located in `tools/verus-bin`.
+This project uses a standalone Verus installation located in `tools/verus-bin`. The `tools` directory includes an installation script.
 
 ### Prerequisites
 - Linux or macOS
@@ -49,4 +34,4 @@ Or manually:
 - **`verified/`**: The crate containing the verification logic.
 - **`tools/`**: Contains the Verus binaries.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to write new proofs.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to write new specifications.
