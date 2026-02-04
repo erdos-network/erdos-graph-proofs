@@ -74,7 +74,7 @@ fn check_queue_config() {
 2.  **Trust but Verify**: When using `#[verifier::external_body]`, you are telling Verus "Trust me, the code does this". Be very careful with this. Ideally, we want to verify the body, but for `external` code, we often have to assume specs for basic functions to verify higher-level logic.
 3.  **Start Small**: Pick small, pure functions or simple structs to verify first before tackling complex async logic.
 
-## 🔧 Running Verus
+## Running Verus
 
 Run the verifier from the project root:
 

@@ -6,7 +6,7 @@ This repository contains formal verification specifications and proofs for [Erdo
 
 We use [Verus](https://www.microsoft.com/en-us/research/project/practical-system-verification/) to verify the correctness of our codebase. Verus adds a "ghost" layer to Rust, allowing us to write specifications on what the code *should* do with preconditions, postconditions and invariants. 
 
-## 🚀 Setup & Usage
+## Setup & Usage
 
 This project uses a standalone Verus installation located in `tools/verus-bin`. The `tools` directory includes an installation script.
 
@@ -28,7 +28,7 @@ Or manually:
 ./tools/verus-bin/verus --crate-type=lib verified/src/lib.rs
 ```
 
-## 📂 Project Structure
+## Project Structure
 
 - **`erdos-graph/`**: The submodule containing the actual source code we are verifying.
 - **`verified/`**: The crate containing the verification logic.
