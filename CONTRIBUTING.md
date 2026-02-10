@@ -74,6 +74,81 @@ fn check_queue_config() {
 2.  **Trust but Verify**: When using `#[verifier::external_body]`, you are telling Verus "Trust me, the code does this". Be very careful with this. Ideally, we want to verify the body, but for `external` code, we often have to assume specs for basic functions to verify higher-level logic.
 3.  **Start Small**: Pick small, pure functions or simple structs to verify first before tackling complex async logic.
 
+## Style Guide
+
+### Naming Conventions
+
+Use clear prefixes for proof/test functions to indicate their purpose:
+
+- **`check_*`**: Simple assertions on basic properties (e.g., checking field values, simple construction)
+- **`verify_*`**: Complex specifications involving multiple operations or behavioral properties
+
+Example:
+```rust
+// Simple property check
+fn check_queue_config() {
+    let config = default_queue_config();
+    assert(config.max_queue_size == 10000);
+}
+
+// Complex behavioral verification
+fn verify_producer_registration() {
+    let config = default_queue_config();
+    let q = new_queue(config);
+    assert(active_producer_count(&q) == 0);
+    register_producer(&q);
+}
+```
+
+### Comments
+
+- Keep comments concise with short phrases
+- Avoid multi-line explanations or numbered lists
+- Avoid full sentences when possible
+- Focus on "what" not "why" (the code should be self-explanatory)
+
+Good:
+```rust
+// Clone preserves max_queue_size
+```
+
+Avoid:
+```rust
+// This function verifies that the Clone implementation for QueueConfig works as expected.
+// Specifically, it ensures that the `max_queue_size` field is preserved in the new copy.
+```
+
+### Types with Private Fields
+
+For types with private fields (like those containing `Arc`, `Mutex`, etc.), use both attributes:
+
+```rust
+#[verifier::external_body]
+#[verifier::reject_recursive_types(T)]
+#[verifier::external_type_specification]
+pub struct ExThreadSafeQueue<T>(crate::thread_safe_queue::ThreadSafeQueue<T>);
+```
+
+### Uninterpreted Spec Functions
+
+For abstract specifications, use `pub uninterp spec fn`:
+
+```rust
+pub uninterp spec fn active_producer_count<T>(q: &ThreadSafeQueue<T>) -> usize;
+```
+
+Then create an exec wrapper with `#[verifier::when_used_as_spec]`:
+
+```rust
+#[verifier::external_body]
+#[verifier::when_used_as_spec(active_producer_count)]
+pub fn active_producer_count_exec<T>(q: &ThreadSafeQueue<T>) -> (count: usize)
+    ensures count == active_producer_count(q)
+{
+    q.active_producer_count()
+}
+```
+
 ## Running Verus
 
 Run the verifier from the project root:
