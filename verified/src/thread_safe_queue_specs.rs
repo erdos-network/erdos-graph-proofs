@@ -95,6 +95,8 @@ pub fn queue_size_exec<T>(q: &crate::thread_safe_queue::ThreadSafeQueue<T>) -> (
 // Increments active producer count
 #[verifier::external_body]
 pub fn register_producer<T>(q: &crate::thread_safe_queue::ThreadSafeQueue<T>)
+    ensures
+        active_producer_count(q) > 0,
 {
     q.register_producer()
 }
@@ -106,7 +108,7 @@ pub fn unregister_producer<T>(q: &crate::thread_safe_queue::ThreadSafeQueue<T>)
     q.unregister_producer()
 }
 
-// Verify producer registration on new queue
+// Verify producer registration increments count
 fn verify_producer_registration() {
     let config = default_queue_config();
     let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
@@ -115,10 +117,14 @@ fn verify_producer_registration() {
     assert(!producers_finished(&q));
     assert(queue_size(&q) == 0);
     
+    let old_count = active_producer_count_exec(&q);
     register_producer(&q);
+    let new_count = active_producer_count_exec(&q);
+    
+    assert(new_count == old_count + 1);
 }
 
-// Verify producer unregistration behavior
+// Verify producer unregistration decrements count and sets done flag
 fn verify_producer_unregistration() {
     let config = default_queue_config();
     let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
@@ -126,7 +132,158 @@ fn verify_producer_unregistration() {
     assert(queue_size(&q) == 0);
     
     register_producer(&q);
+    let old_count = active_producer_count_exec(&q);
     unregister_producer(&q);
+    let new_count = active_producer_count_exec(&q);
+    
+    assert(new_count == old_count - 1);
+    assert(new_count == 0);
+    assert(producers_finished_exec(&q));
+}
+
+// Verify multiple producer registration
+fn verify_multiple_producers() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    assert(active_producer_count_exec(&q) == 0);
+    
+    register_producer(&q);
+    assert(active_producer_count_exec(&q) == 1);
+    
+    register_producer(&q);
+    assert(active_producer_count_exec(&q) == 2);
+    
+    register_producer(&q);
+    assert(active_producer_count_exec(&q) == 3);
+}
+
+// Verify partial unregistration doesn't set done flag
+fn verify_partial_unregistration() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    register_producer(&q);
+    register_producer(&q);
+    assert(active_producer_count_exec(&q) == 2);
+    
+    unregister_producer(&q);
+    assert(active_producer_count_exec(&q) == 1);
+    assert(!producers_finished_exec(&q));
+    
+    unregister_producer(&q);
+    assert(active_producer_count_exec(&q) == 0);
+    assert(producers_finished_exec(&q));
+}
+
+// Verify unregister saturates at zero
+fn verify_unregister_saturates() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    assert(active_producer_count_exec(&q) == 0);
+    
+    unregister_producer(&q);
+    assert(active_producer_count_exec(&q) == 0);
+}
+
+// Verify register doesn't affect queue size (state isolation)
+fn verify_register_preserves_queue_size() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    let size_before = queue_size_exec(&q);
+    register_producer(&q);
+    let size_after = queue_size_exec(&q);
+    
+    assert(size_before == size_after);
+}
+
+// Verify unregister doesn't affect queue size (state isolation)
+fn verify_unregister_preserves_queue_size() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    register_producer(&q);
+    
+    let size_before = queue_size_exec(&q);
+    unregister_producer(&q);
+    let size_after = queue_size_exec(&q);
+    
+    assert(size_before == size_after);
+}
+
+// Verify sequential operations maintain consistency (lock release/reacquire)
+fn verify_sequential_consistency() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    // First operation
+    register_producer(&q);
+    let count1 = active_producer_count_exec(&q);
+    assert(count1 == 1);
+    
+    // Second operation (requires lock release and reacquire)
+    register_producer(&q);
+    let count2 = active_producer_count_exec(&q);
+    assert(count2 == 2);
+    
+    // Third operation
+    unregister_producer(&q);
+    let count3 = active_producer_count_exec(&q);
+    assert(count3 == 1);
+    
+    // Fourth operation
+    unregister_producer(&q);
+    let count4 = active_producer_count_exec(&q);
+    assert(count4 == 0);
+    assert(producers_finished_exec(&q));
+}
+
+// Verify consistent reads (no torn reads)
+fn verify_consistent_reads() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    register_producer(&q);
+    register_producer(&q);
+    
+    // Multiple reads should give same result
+    let count_a = active_producer_count_exec(&q);
+    let count_b = active_producer_count_exec(&q);
+    let count_c = active_producer_count_exec(&q);
+    
+    assert(count_a == count_b);
+    assert(count_b == count_c);
+    assert(count_a == 2);
+}
+
+// Verify atomic state transitions
+fn verify_atomic_transitions() {
+    let config = default_queue_config();
+    let q: crate::thread_safe_queue::ThreadSafeQueue<u32> = new_queue(config);
+    
+    register_producer(&q);
+    
+    // State before
+    let count_before = active_producer_count_exec(&q);
+    let finished_before = producers_finished_exec(&q);
+    let size_before = queue_size_exec(&q);
+    
+    // Atomic operation
+    unregister_producer(&q);
+    
+    // State after - all fields updated atomically
+    let count_after = active_producer_count_exec(&q);
+    let finished_after = producers_finished_exec(&q);
+    let size_after = queue_size_exec(&q);
+    
+    // Verify atomic transition
+    assert(count_before == 1);
+    assert(!finished_before);
+    assert(count_after == 0);
+    assert(finished_after);
+    assert(size_before == size_after);
 }
 
 }
