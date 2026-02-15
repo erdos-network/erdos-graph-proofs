@@ -22,6 +22,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git submodule update --init --remote --merge erdos-graph
+          git add erdos-graph
       
       - name: Check for changes
         id: changes
@@ -35,6 +36,6 @@ jobs:
       - name: Commit and push changes
         if: steps.changes.outputs.has_changes == 'true'
         run: |
-          git add erdos-graph
-          git commit -m "chore: update erdos-graph submodule"
+          SUBMODULE_COMMIT=$(git rev-parse HEAD:erdos-graph | cut -c1-8)
+          git commit -m "chore: update erdos-graph submodule to ${SUBMODULE_COMMIT}"
           git push
