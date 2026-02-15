@@ -36,6 +36,6 @@ jobs:
       - name: Commit and push changes
         if: steps.changes.outputs.has_changes == 'true'
         run: |
-          SUBMODULE_COMMIT=$(git rev-parse HEAD:erdos-graph | cut -c1-8)
+          SUBMODULE_COMMIT=$(git -C erdos-graph rev-parse HEAD | cut -c1-8)
           git commit -m "chore: update erdos-graph submodule to ${SUBMODULE_COMMIT}"
           git push
