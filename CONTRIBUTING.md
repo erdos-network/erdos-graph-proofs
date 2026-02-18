@@ -258,17 +258,27 @@ assert(chunks@[n - 1].1 == end);
 assert(chunks@[chunks@.len() - 1].1 == end);
 ```
 
-**3. Low-confidence trigger warnings on `forall`**
+**3. `forall` trigger warnings**
 
-Verus will print notes like "automatically chose triggers" for `forall` quantifiers. These are informational, not errors. To silence them, add `#![auto]`:
+Z3 (the underlying SMT solver) needs a **trigger** — a pattern it watches for in the proof context — to know when to instantiate a `forall`. When Verus can't confidently choose one it prints a note like `"automatically chose triggers"`. This is not an error, but an unoptimised trigger can silently fail to fire in complex proofs.
+
+There are three annotation options:
 
 ```rust
-// Without annotation → prints trigger note
-forall|i: int| 0 <= i < n ==> dt_lt(chunks@[i].0, chunks@[i].1)
-
-// ✅ Suppress with #![auto]
+// #![auto] — accept the auto-chosen trigger, suppress the note
+// Right when the auto-choice is a good one (e.g. sequence indexing)
 forall|i: int| #![auto] 0 <= i < n ==> dt_lt(chunks@[i].0, chunks@[i].1)
+
+// #[trigger] — pin a specific sub-expression as the trigger
+// Right when you want explicit control over what fires the quantifier
+forall|i: int| 0 <= i < n ==> dt_lt(#[trigger] chunks@[i].0, chunks@[i].1)
+
+// #![trigger f(i), g(i)] — multiple trigger patterns (fires on any match)
+// Right when no single trigger is reliable on its own
+forall|i: int| #![trigger chunks@[i].0, chunks@[i].1] ...
 ```
+
+**Practical rule**: start with `#![auto]` to silence the warning. Only switch to explicit `#[trigger]` if you see a verification failure where a `forall` isn't being instantiated when you expect it to be.
 
 ### Workarounds
 

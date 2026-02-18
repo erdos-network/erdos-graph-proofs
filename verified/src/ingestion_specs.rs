@@ -65,21 +65,21 @@ pub fn chunk_date_range(
 ) -> (chunks: Vec<(DateTime, DateTime)>)
     requires dt_lt(start, end)
     ensures
-        // 1. non-empty
+        // Non-empty
         chunks@.len() > 0,
-        // 2a. first chunk opens at start
+        // First chunk opens at start
         chunks@[0].0 == start,
-        // 2b. last chunk closes at end
+        // Last chunk closes at end
         chunks@[chunks@.len() - 1].1 == end,
-        // 3. contiguity
+        // Contiguous
         forall|i: int|
             0 <= i < chunks@.len() as int - 1
             ==> chunks@[i].1 == chunks@[i + 1].0,
-        // 4. each chunk is a forward interval
-        forall|i: int|
+        // Each chunk is a forward interval
+        forall|i: int| #![auto]
             0 <= i < chunks@.len() as int
             ==> dt_lt(chunks@[i].0, chunks@[i].1),
-        // 5. zero chunk_size returns the whole range as one chunk
+        // Zero chunk_size yields single chunk
         chunk_size_days == 0 ==> chunks@.len() == 1,
 {
     unimplemented!()
@@ -99,7 +99,7 @@ proof fn lemma_chunk_ordered(chunks: &Vec<(DateTime, DateTime)>, i: int)
     requires
         chunks@.len() > 0,
         0 <= i < chunks@.len() as int,
-        forall|j: int|
+        forall|j: int| #![auto]
             0 <= j < chunks@.len() as int
             ==> dt_lt(chunks@[j].0, chunks@[j].1),
     ensures dt_lt(chunks@[i].0, chunks@[i].1)
@@ -157,7 +157,8 @@ fn verify_zero_chunk_size_returns_single_chunk() {
 /// covers [start, end].
 fn verify_nonzero_chunk_size_covers_range() {
     let start = datetime_from_ts(0u64);
-    let end   = datetime_from_ts(7 * 86400u64); // 7 days later
+    // 7 days later
+    let end   = datetime_from_ts(7 * 86400u64);
 
     assert(dt_lt(start, end));
 
@@ -171,7 +172,8 @@ fn verify_nonzero_chunk_size_covers_range() {
 /// For a multi-chunk sequence, consecutive chunks share an endpoint (no gap).
 fn verify_chunks_are_contiguous() {
     let start = datetime_from_ts(0u64);
-    let end   = datetime_from_ts(3 * 86400u64); // 3 days, chunk_size = 1
+    // 3 days, chunk_size = 1
+    let end   = datetime_from_ts(3 * 86400u64);
 
     assert(dt_lt(start, end));
 
@@ -194,7 +196,7 @@ fn verify_each_chunk_is_ordered() {
 
     let chunks = chunk_date_range(start, end, 3);
 
-    assert(forall|i: int|
+    assert(forall|i: int| #![auto]
         0 <= i < chunks@.len() as int
         ==> dt_lt(chunks@[i].0, chunks@[i].1)
     );
@@ -203,12 +205,12 @@ fn verify_each_chunk_is_ordered() {
 /// set_checkpoint followed by get_checkpoint round-trips the stored datetime.
 fn verify_checkpoint_roundtrip() {
     let ts  = datetime_from_ts(9_999_999u64);
-    let src = 0u64; // "arxiv"
+    // Source id for "arxiv"
+    let src = 0u64;
 
     let ok = set_checkpoint(src, ts);
 
-    // If the write succeeded the stored predicate holds.
-    // get_checkpoint with that stored value returns it back.
+    // Round-trip check
     let retrieved = get_checkpoint(src, Some(ts));
     assert(retrieved == Some(ts));
 }
