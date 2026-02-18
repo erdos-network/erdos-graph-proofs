@@ -101,11 +101,84 @@ fn check_queue_config() {
 }
 ```
 
+### 3. Axiomatic Stubs for External Libraries
+
+Some `erdos-graph` source files import third-party crates (`chrono`, `helix_db`, etc.) that are not available in `erdos-proofs`. You cannot include those files directly via `#[path]`. Instead, create **abstract stub types** in `verified/src/axioms/` and write specs against them.
+
+**When to use this pattern**: the file you want to spec has `use some_external_crate::...` at the top.
+
+**Directory layout**:
+```
+verified/src/
+  axioms/
+    mod.rs            ← pub mod entries for each stub file
+    *_stubs.rs        ← abstract stub type definitions
+  *_specs.rs  ← specs using those stub types
+```
+
+**Step-by-step**:
+
+1. For each external type you need, define an abstract struct in `verified/src/axioms/`, here are some examples:
+
+```rust
+// axioms/chrono_stubs.rs
+#[derive(Clone, Copy)]
+pub struct DateTime {
+    pub ts: u64,  // abstract timestamp
+}
+
+// open spec fn: transparent, Verus can unfold the definition
+pub open spec fn dt_lt(a: DateTime, b: DateTime) -> bool {
+    a.ts < b.ts
+}
+
+// #[verifier::external_body] constructor = trust boundary
+#[verifier::external_body]
+pub fn datetime_from_ts(ts: u64) -> (d: DateTime)
+    ensures d.ts == ts
+{ DateTime { ts } }
+```
+
+2. Register the stub module in `axioms/mod.rs` and import it from your spec file like this:
+
+```rust
+// axioms/mod.rs
+pub mod chrono_stubs;
+
+// ingestion_specs.rs
+use crate::axioms::chrono_stubs::*;
+```
+
+3. Write `#[verifier::external_body]` wrappers for the functions under spec, using the abstract types in their signatures:
+
+```rust
+#[verifier::external_body]
+pub fn chunk_date_range(
+    start: DateTime,
+    end: DateTime,
+    chunk_size_days: u64,
+) -> (chunks: Vec<(DateTime, DateTime)>)
+    requires dt_lt(start, end)
+    ensures
+        chunks@.len() > 0,
+        chunks@[0].0 == start,
+        chunks@[chunks@.len() - 1].1 == end,
+        forall|i: int| 0 <= i < chunks@.len() as int - 1
+            ==> chunks@[i].1 == chunks@[i + 1].0,
+{ unimplemented!() }
+```
+
+**Key rules for abstract stub types**:
+- **Never use empty structs** (`struct Foo {}`). Verus treats all instances of an empty struct as equal, breaking any ordering or identity reasoning. Always include at least one primitive field.
+- **Derive `Copy + Clone`** for value types like timestamps, durations ids. This avoids move errors when the same value appears in multiple assertions.
+- Prefer `open spec fn` for properties derivable from fields. Reserve `uninterp spec fn` for predicates that must stay opaque (e.g., `valid_source` over a string field).
+
 ### Key Concepts
 
 - **External Type Specification**: Tells Verus about the layout of structs defined in the `erdos-graph` source code.
 - **`crate::module_name`**: Since the source is included at the crate root in `lib.rs`, you access it globally via `crate::`.
 - **Modularity**: Keep `lib.rs` clean. It should mostly just be a list of modules. All logic goes into `*_specs.rs` files.
+- **`verified/src/axioms/`**: Home for stub types representing external library types. Each file covers one library or logical group.
 
 ## Verus Features: What to Use and What to Avoid
 
@@ -151,6 +224,51 @@ fn verify_something() {
 - **Direct `proof` blocks with ghost state**: The external code doesn't have ghost state
 - **`AtomicInvariant` / `open_atomic_invariant!`**: Would require modifying erdos-graph to use vstd primitives
 - **Modifying function signatures**: We must keep erdos-graph as is
+
+### ⚠️ Common Pitfalls
+
+These are the errors you will likely to encounter when writing specs.
+
+**1. Integer arithmetic widens to `int` inside `verus!` spec fns**
+
+Inside a `verus! {}` block, arithmetic on machine integers (`u64`, `usize`, etc.) is performed in the mathematical integer type `int` to avoid overflow. This means the result type is `int`, not the original machine type:
+
+```rust
+// ❌ Type error: expected u64, found int
+pub open spec fn dt_add(dt: DateTime, d: ChronoDuration) -> DateTime {
+    DateTime { ts: dt.ts + d.days * 86400 }
+}
+
+// ✅ Cast back to the concrete type
+pub open spec fn dt_add(dt: DateTime, d: ChronoDuration) -> DateTime {
+    DateTime { ts: (dt.ts + d.days * 86400) as u64 }
+}
+```
+
+**2. `Seq::len()` is spec-mode — cannot bind to an exec `let`**
+
+`vec@.len()` calls `Seq::len()`, a spec function. You can use it freely inside `assert!(...)`, but you cannot assign it to an exec variable:
+
+```rust
+// ❌ Cannot call spec function in exec context
+let n = chunks@.len();
+assert(chunks@[n - 1].1 == end);
+
+// ✅ Inline the spec call inside assert
+assert(chunks@[chunks@.len() - 1].1 == end);
+```
+
+**3. Low-confidence trigger warnings on `forall`**
+
+Verus will print notes like "automatically chose triggers" for `forall` quantifiers. These are informational, not errors. To silence them, add `#![auto]`:
+
+```rust
+// Without annotation → prints trigger note
+forall|i: int| 0 <= i < n ==> dt_lt(chunks@[i].0, chunks@[i].1)
+
+// ✅ Suppress with #![auto]
+forall|i: int| #![auto] 0 <= i < n ==> dt_lt(chunks@[i].0, chunks@[i].1)
+```
 
 ### Workarounds
 
@@ -227,6 +345,34 @@ For types with private fields (like those containing `Arc`, `Mutex`, etc.), use 
 #[verifier::reject_recursive_types(T)]
 #[verifier::external_type_specification]
 pub struct ExThreadSafeQueue<T>(crate::thread_safe_queue::ThreadSafeQueue<T>);
+```
+
+### `open spec fn` vs `uninterp spec fn`
+
+Choose based on whether Verus should be able to see the definition:
+
+| | `open spec fn` | `uninterp spec fn` |
+|---|---|---|
+| Definition visible to Verus | ✅ yes — can unfold | ❌ no — treated as oracle |
+| Use when | property is derivable from struct fields | property involves strings, external state, or is intentionally opaque |
+| SMT reasoning | arithmetic / structural | only via `ensures` axioms |
+
+Here are some examples:
+
+```rust
+// open: Verus can prove dt_lt(a, b) from a.ts < b.ts directly
+pub open spec fn dt_lt(a: DateTime, b: DateTime) -> bool {
+    a.ts < b.ts
+}
+
+// uninterp: Verus cannot look inside; truth comes from external_body ensures
+pub uninterp spec fn valid_source(r: &PublicationRecord) -> bool;
+
+#[verifier::external_body]
+pub fn mk_valid_publication(year: u32) -> (r: PublicationRecord)
+    requires year > 0u32
+    ensures valid_source(&r)   // ← only way Verus learns this is true
+{ unimplemented!() }
 ```
 
 ### Uninterpreted Spec Functions
