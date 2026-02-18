@@ -5,6 +5,8 @@ use vstd::prelude::*;
 pub mod thread_safe_queue;
 
 pub mod thread_safe_queue_specs;
+pub mod axioms;
+pub mod ingestion_specs;
 
 verus! {
 
