@@ -101,7 +101,7 @@ rm -f "$TEMP_FILE"
 
 echo "✓ Verus $VERUS_VERSION installed to $VERUS_DIR"
 
-# Find and test the binary
+# Find the binary
 if [ -f "$VERUS_DIR/verus" ]; then
     VERUS_BIN="$VERUS_DIR/verus"
 elif [ -f "$VERUS_DIR/verus.exe" ]; then
@@ -110,7 +110,23 @@ else
     VERUS_BIN=$(find "$VERUS_DIR" -name "verus" -o -name "verus.exe" | head -1)
 fi
 
-if [ -n "$VERUS_BIN" ]; then
-    echo "Verus binary: $VERUS_BIN"
-    "$VERUS_BIN" --version
+if [ -z "$VERUS_BIN" ]; then
+    echo "❌ Could not find Verus binary"
+    exit 1
 fi
+
+echo "Verus binary: $VERUS_BIN"
+
+# Install the Rust toolchain that Verus requires
+VERUS_OUTPUT=$("$VERUS_BIN" --version 2>&1 || true)
+REQUIRED_TOOLCHAIN=$(echo "$VERUS_OUTPUT" | grep -oP 'required rust toolchain \K\S+' || true)
+
+if [ -n "$REQUIRED_TOOLCHAIN" ]; then
+    echo "Verus requires Rust toolchain: $REQUIRED_TOOLCHAIN"
+    echo "Installing with rustup..."
+    rustup install "$REQUIRED_TOOLCHAIN"
+    echo "✓ Rust toolchain $REQUIRED_TOOLCHAIN installed"
+fi
+
+# Verify
+"$VERUS_BIN" --version
