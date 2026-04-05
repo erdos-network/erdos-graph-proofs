@@ -9,40 +9,41 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.93.0
-          profile: minimal
-          override: true
-      
+
       - name: Cache Verus installation
         id: cache-verus
         uses: actions/cache@v4
         with:
           path: tools/verus-bin
           key: verus-${{ runner.os }}-${{ hashFiles('tools/install-verus.sh') }}
-      
+
       - name: Install Verus
         if: steps.cache-verus.outputs.cache-hit != 'true'
         run: bash tools/install-verus.sh
-      
+
+      - name: Install required Rust toolchain
+        run: |
+          REQUIRED_TOOLCHAIN=$(tools/verus-bin/verus --version 2>&1 | grep -oP 'required rust toolchain \K\S+' || true)
+          if [ -n "$REQUIRED_TOOLCHAIN" ]; then
+            echo "Installing Rust toolchain $REQUIRED_TOOLCHAIN required by Verus..."
+            rustup install "$REQUIRED_TOOLCHAIN"
+          fi
+
       - name: Add Verus to PATH
         run: echo "$GITHUB_WORKSPACE/tools/verus-bin" >> $GITHUB_PATH
-      
+
       - name: Verify Verus installation
         run: verus --version
-      
+
       - name: Run verification
         run: make verify
-      
+
       - name: Upload verification results
         if: always()
         uses: actions/upload-artifact@v4
